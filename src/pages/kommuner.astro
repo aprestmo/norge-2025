@@ -1,60 +1,152 @@
 ---
 import Layout from "@/layouts/Layout.astro";
 import { Card } from "@/components/starwind/card";
+import { Image } from "astro:assets";
 
 // Fetch kommuner
-const kommunerResponse = await fetch('https://api.test.kartverket.no/kommuneinfo/v1/kommuner?filtrer=kommunenavn,kommunenavnNorsk,kommunenummer');
+const kommunerResponse = await fetch(
+  "https://api.test.kartverket.no/kommuneinfo/v1/kommuner?filtrer=kommunenavn,kommunenavnNorsk,kommunenummer"
+);
 const kommunerData = await kommunerResponse.json();
 
+// Fetch additional kommune data
+const additionalKommuneData = await fetch(
+  "https://opensheet.elk.sh/1c0GORGfO4BWbS5y2lrZTmyUWMv47_ggGCG-eTKJ1GJw/Kommuner"
+);
+const additionalKommuneDataJson = await additionalKommuneData.json();
+
 // Fetch fylker
-const fylkerResponse = await fetch('https://api.test.kartverket.no/kommuneinfo/v1/fylker');
+const fylkerResponse = await fetch(
+  "https://api.test.kartverket.no/kommuneinfo/v1/fylker"
+);
 const fylkerData = await fylkerResponse.json();
 
 // Map fylkesnummer (first two digits) to fylkesnavn
 const fylkesMap: Record<string, string> = {};
 for (const fylke of fylkerData) {
-    fylkesMap[fylke.fylkesnummer.padStart(2, "0")] = fylke.fylkesnavn;
+  fylkesMap[fylke.fylkesnummer.padStart(2, "0")] = fylke.fylkesnavn;
 }
 
-function sortByKommunenummer(arr: Array<{ kommunenummer: string; kommunenavn: string; kommunenavnNorsk: string }>) {
-    return arr.slice().sort((a, b) => Number(a.kommunenummer) - Number(b.kommunenummer));
+// Map additional kommune data by id for quick lookup
+const additionalKommuneMap: Record<string, any> = {};
+for (const row of additionalKommuneDataJson) {
+  additionalKommuneMap[row.id] = row;
 }
 
-function getKommuneNavnDisplay(kommune: { kommunenummer: string; kommunenavn: string; kommunenavnNorsk: string }) {
-    if (kommune.kommunenavnNorsk !== kommune.kommunenavn) {
-        return `${kommune.kommunenavnNorsk} (${kommune.kommunenavn})`;
-    }
-    return kommune.kommunenavnNorsk;
+function sortByKommunenummer(
+  arr: Array<{
+    kommunenummer: string;
+    kommunenavn: string;
+    kommunenavnNorsk: string;
+  }>
+) {
+  return arr
+    .slice()
+    .sort((a, b) => Number(a.kommunenummer) - Number(b.kommunenummer));
+}
+
+function getKommuneNavnDisplay(kommune: {
+  kommunenummer: string;
+  kommunenavn: string;
+  kommunenavnNorsk: string;
+}) {
+  if (kommune.kommunenavnNorsk !== kommune.kommunenavn) {
+    return `${kommune.kommunenavnNorsk} (${kommune.kommunenavn})`;
+  }
+  return kommune.kommunenavnNorsk;
 }
 
 // Group kommuner by fylkesnummer (first two digits)
-function groupByFylkesnummer(arr: Array<{ kommunenummer: string; kommunenavn: string; kommunenavnNorsk: string }>) {
-    const groups: Record<string, typeof arr> = {};
-    for (const kommune of arr) {
-        const prefix = kommune.kommunenummer.slice(0, 2);
-        if (!groups[prefix]) groups[prefix] = [];
-        groups[prefix].push(kommune);
-    }
-    return groups;
+function groupByFylkesnummer(
+  arr: Array<{
+    kommunenummer: string;
+    kommunenavn: string;
+    kommunenavnNorsk: string;
+  }>
+) {
+  const groups: Record<string, typeof arr> = {};
+  for (const kommune of arr) {
+    const prefix = kommune.kommunenummer.slice(0, 2);
+    if (!groups[prefix]) groups[prefix] = [];
+    groups[prefix].push(kommune);
+  }
+  return groups;
 }
 
 const sortedData = sortByKommunenummer(kommunerData);
 const groupedData = groupByFylkesnummer(sortedData);
 const groupKeys = Object.keys(groupedData).sort();
+
+// Helper to get badge image URL from kommunenummer
+function getBadgeUrl(kommunenummer: string) {
+  // Remove leading zero if kommunenummer starts with '03'
+  const filename = kommunenummer.startsWith("03")
+    ? kommunenummer.slice(1)
+    : kommunenummer;
+  return `https://raw.githubusercontent.com/aprestmo/norske-fylkes-kommunevaapen/master/kommuner/${filename}.svg`;
+}
 ---
 
 <Layout title="Kommuner">
-    <h1>Kommuner</h1>
-    {groupKeys.map((prefix) => (
-        <section>
-            <h2>{fylkesMap[prefix] ?? `Ukjent fylke (${prefix})`}</h2>
-            <ol>
-                {groupedData[prefix].map((kommune) => (
-                    <li><Card>
-                        <h3>{kommune.kommunenummer}: {getKommuneNavnDisplay(kommune)}</h3>
-                    </Card></li>
-                ))}
-            </ol>
-        </section>
-    ))}
+  <h1>Kommuner</h1>
+  {
+    groupKeys.map((prefix) => (
+      <section>
+        <h2>
+          {prefix === "03"
+            ? `${fylkesMap[prefix]} *`
+            : `Kommuner i ${fylkesMap[prefix]} fylke`}
+        </h2>
+        <ol>
+          {groupedData[prefix].map((kommune) => {
+            const admCentre =
+              additionalKommuneMap[kommune.kommunenummer]?.adm_centre;
+            const language =
+              additionalKommuneMap[kommune.kommunenummer]?.language;
+            const url = additionalKommuneMap[kommune.kommunenummer]?.url;
+            const hasPrefix =
+              additionalKommuneMap[kommune.kommunenummer]?.prefix === "TRUE";
+            const link = hasPrefix
+              ? `//www.${url}.kommune.no`
+              : `//${url}.kommune.no`;
+            const linkText = hasPrefix
+              ? `www.${url}.kommune.no`
+              : `${url}.kommune.no`;
+            const badgeUrl = getBadgeUrl(kommune.kommunenummer);
+            return (
+              <li>
+                <Card>
+                  <Image
+                    src={badgeUrl}
+                    alt={`Kommunevåpenet til ${getKommuneNavnDisplay(kommune)} kommune`}
+                    width={48}
+                    height={48}
+                    style="margin-block-end: 0.5rem;"
+                  />
+                  <h3>
+                    {kommune.kommunenummer}: {getKommuneNavnDisplay(kommune)}
+                  </h3>
+                  {admCentre && (
+                    <p>
+                      <strong>Adm.senter:</strong> {admCentre}
+                    </p>
+                  )}
+                  {language && (
+                    <p>
+                      <strong>Språk:</strong> {language}
+                    </p>
+                  )}
+                  {url && (
+                    <a href={link} target="_blank" rel="noopener noreferrer">
+                      {linkText}
+                    </a>
+                  )}
+                </Card>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+    ))
+  }
 </Layout>
