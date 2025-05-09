@@ -1,0 +1,16 @@
+main {
+	margin-inline: auto;
+	inline-size: min(100%, 70ch);
+}
+
+h1 {
+	font-weight: 700;
+}
+
+li {
+	padding: 0.5rem;
+}
+
+li > div {
+	padding: 1lh;
+}

@@ -1,0 +1,60 @@
+---
+import Layout from "@/layouts/Layout.astro";
+import { Card } from "@/components/starwind/card";
+
+// Fetch kommuner
+const kommunerResponse = await fetch('https://api.test.kartverket.no/kommuneinfo/v1/kommuner?filtrer=kommunenavn,kommunenavnNorsk,kommunenummer');
+const kommunerData = await kommunerResponse.json();
+
+// Fetch fylker
+const fylkerResponse = await fetch('https://api.test.kartverket.no/kommuneinfo/v1/fylker');
+const fylkerData = await fylkerResponse.json();
+
+// Map fylkesnummer (first two digits) to fylkesnavn
+const fylkesMap: Record<string, string> = {};
+for (const fylke of fylkerData) {
+    fylkesMap[fylke.fylkesnummer.padStart(2, "0")] = fylke.fylkesnavn;
+}
+
+function sortByKommunenummer(arr: Array<{ kommunenummer: string; kommunenavn: string; kommunenavnNorsk: string }>) {
+    return arr.slice().sort((a, b) => Number(a.kommunenummer) - Number(b.kommunenummer));
+}
+
+function getKommuneNavnDisplay(kommune: { kommunenummer: string; kommunenavn: string; kommunenavnNorsk: string }) {
+    if (kommune.kommunenavnNorsk !== kommune.kommunenavn) {
+        return `${kommune.kommunenavnNorsk} (${kommune.kommunenavn})`;
+    }
+    return kommune.kommunenavnNorsk;
+}
+
+// Group kommuner by fylkesnummer (first two digits)
+function groupByFylkesnummer(arr: Array<{ kommunenummer: string; kommunenavn: string; kommunenavnNorsk: string }>) {
+    const groups: Record<string, typeof arr> = {};
+    for (const kommune of arr) {
+        const prefix = kommune.kommunenummer.slice(0, 2);
+        if (!groups[prefix]) groups[prefix] = [];
+        groups[prefix].push(kommune);
+    }
+    return groups;
+}
+
+const sortedData = sortByKommunenummer(kommunerData);
+const groupedData = groupByFylkesnummer(sortedData);
+const groupKeys = Object.keys(groupedData).sort();
+---
+
+<Layout title="Kommuner">
+    <h1>Kommuner</h1>
+    {groupKeys.map((prefix) => (
+        <section>
+            <h2>{fylkesMap[prefix] ?? `Ukjent fylke (${prefix})`}</h2>
+            <ol>
+                {groupedData[prefix].map((kommune) => (
+                    <li><Card>
+                        <h3>{kommune.kommunenummer}: {getKommuneNavnDisplay(kommune)}</h3>
+                    </Card></li>
+                ))}
+            </ol>
+        </section>
+    ))}
+</Layout>
