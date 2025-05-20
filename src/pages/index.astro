@@ -1,9 +1,111 @@
 ---
 import Layout from "@/layouts/Layout.astro";
-import { Button } from "@/components/starwind/button";
+import { Card } from "@/components/starwind/card";
+import { Image } from "astro:assets";
+
+const kommunerResponse = await fetch(
+  "https://raw.githubusercontent.com/aprestmo/norge-data/main/kommuner-2025.json"
+);
+const kommunerData = await kommunerResponse.json();
+
+const fylkesResponse = await fetch(
+  "https://raw.githubusercontent.com/aprestmo/norge-data/main/fylker-2025.json"
+);
+const fylkesData = await fylkesResponse.json();
+
+// Group kommuner by fylkesnummer (first two digits of k_id)
+function groupByFylkesnummer(kommuner, fylker) {
+  const groups = {};
+  for (const fylke of fylker) {
+    groups[fylke.f_id] = {
+      fylkesnavn: fylke.f_name,
+      kommuner: [],
+    };
+  }
+  for (const kommune of kommuner) {
+    const prefix = kommune.k_id.slice(0, 2);
+    if (groups[prefix]) {
+      groups[prefix].kommuner.push(kommune);
+    }
+  }
+  return groups;
+}
+
+// Function to display kommune name and norsk name if different
+function getKommuneNavn(kommune) {
+  if (kommune.k_name !== kommune.k_name_no) {
+    return `${kommune.k_name} / ${kommune.k_name_no}`;
+  }
+  return kommune.k_name;
+}
+
+const grouped = groupByFylkesnummer(kommunerData, fylkesData);
+let fylkesKeys = Object.keys(grouped).filter(
+  (key) => grouped[key].kommuner.length > 0
+);
+
+// Move county 301 (Oslo) to the top if it exists
+const index301 = fylkesKeys.indexOf("03");
+if (index301 > -1) {
+  fylkesKeys = [
+    fylkesKeys[index301],
+    ...fylkesKeys.slice(0, index301),
+    ...fylkesKeys.slice(index301 + 1),
+  ];
+}
 ---
 
-<Layout title="Home">
-  <h1>Astro</h1>
-  <Button>Hello World</Button>
+<Layout title="Kommuner">
+  {
+    fylkesKeys.map((fylkesnummer) => {
+      // For fylkesnummer "03" (Oslo), use "03.svg", else use fylkesnummer.svg
+      const fylkeBadgeUrl =
+        fylkesnummer === "03"
+          ? "https://raw.githubusercontent.com/aprestmo/norske-fylkes-kommunevaapen/master/fylker/3.svg"
+          : `https://raw.githubusercontent.com/aprestmo/norske-fylkes-kommunevaapen/master/fylker/${fylkesnummer}.svg`;
+      return (
+        <section class="mb-8">
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <img
+              src={fylkeBadgeUrl}
+              alt={`Fylkesvåpen for ${grouped[fylkesnummer].fylkesnavn}`}
+              width={48}
+              height={48}
+              style="object-fit: contain; margin-bottom: 0.5rem;"
+            />
+            <h2 class="font-bold" style="margin: 0;">
+              Kommuner i {grouped[fylkesnummer].fylkesnavn}
+            </h2>
+          </div>
+          <ol class="flex flex-wrap gap-4">
+            {grouped[fylkesnummer].kommuner.map((kommune) => {
+              const filename = kommune.k_id.startsWith("0")
+                ? kommune.k_id.slice(1)
+                : kommune.k_id;
+              const badgeUrl = `https://raw.githubusercontent.com/aprestmo/norske-fylkes-kommunevaapen/master/kommuner/${filename}.svg`;
+              return (
+                <li class="mb-4 p-2">
+                  <Card class="p-4">
+                    <a href={`//${kommune.k_url}`} target="_blank">
+                      <img
+                        src={badgeUrl}
+                        alt={`Kommunevåpen for ${kommune.k_name}`}
+                        width={48}
+                        height={48}
+                        style="object-fit: contain; margin-bottom: 0.5rem;"
+                      />
+                      <h3>
+                        {getKommuneNavn(kommune)}
+                        <span>({kommune.k_id})</span>
+                      </h3>
+                    </a>{" "}
+                  </Card>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
+      );
+    })
+  }
 </Layout>
